@@ -3,7 +3,9 @@ package com.example.demo.service;
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.thread.ExecutorBuilder;
 import cn.hutool.core.util.IdUtil;
+import com.example.demo.entity.CstVO;
 import com.example.demo.entity.Item;
+import com.example.demo.mapper.CstDAO;
 import com.example.demo.repo.ItemRepo;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +43,9 @@ public class CstService {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
+    @Resource
+    private CstDAO cstDAO;
+
     public void saveAll(List<Item> items) {
         itemRepo.saveAll(items);
     }
@@ -52,10 +57,11 @@ public class CstService {
         Long minId = jdbcClient.sql("select id from item order by id limit 1").query(Long.class).single();
         long maxId = jdbcClient.sql("select id from item order by id desc limit 1").query(Long.class).single();
         for (int i = 0; i < count / 10000 + 1; i++) {
-            Long id = jdbcClient.sql("select max(id) from item where id>=? limit 10000").param(minId).query(Long.class).single();
-            if (id == null) {
+            List<Long> itemList = jdbcClient.sql("select id from item where id>=? order by id limit 10000").param(minId).query(Long.class).list();
+            if (CollectionUtil.isEmpty(itemList)) {
                 break;
             }
+            var id = itemList.getLast();
             a.add(minId + "%" + Math.min(maxId, id));
             minId = id + 1;
         }
@@ -87,13 +93,13 @@ public class CstService {
             int finalI = i;
             CompletableFuture.runAsync(() -> {
                 var b = rangeList.get(finalI);
-                List<Item> itemList = getItemList(b);
+                List<Long> itemList = getItemIdList(b);
                 if (CollectionUtil.isEmpty(itemList)) {
                     countDownLatch.countDown();
                     return;
                 }
-                itemList.forEach(item -> item.setId(IdUtil.getSnowflake().nextId()));
-                insert(itemList);
+                List<CstVO> list = itemList.stream().map(it -> new CstVO(IdUtil.getSnowflake().nextId(), it)).toList();
+                cstDAO.copy(list,Long.parseLong(b[0]),Long.parseLong(b[1]));
                 countDownLatch.countDown();
             },executor);
 
@@ -109,6 +115,14 @@ public class CstService {
                 .param("startId", b[0], Types.BIGINT)
                 .param("endId", b[1], Types.BIGINT)
                 .query(Item.class)
+                .list();
+    }
+
+    public List<Long> getItemIdList(String[] b){
+        return jdbcClient.sql("select id from item where id>=:startId and id<=:endId order by id ")
+                .param("startId", b[0], Types.BIGINT)
+                .param("endId", b[1], Types.BIGINT)
+                .query(Long.class)
                 .list();
     }
 
