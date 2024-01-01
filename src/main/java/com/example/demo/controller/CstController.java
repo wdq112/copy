@@ -6,6 +6,7 @@ import com.example.demo.repo.ItemRepo;
 import com.example.demo.service.CstService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 @RestController
 @Slf4j
@@ -28,6 +30,9 @@ public class CstController {
 
     @Resource
     private JdbcTemplate jdbcTemplate;
+
+    @Resource
+    private RedisTemplate<String,String> redisTemplate;
     @GetMapping("/")
     public String hello() {
         return "hello world";
@@ -41,6 +46,7 @@ public class CstController {
 
     @GetMapping("/insert")
     public String insert() {
+        jdbcTemplate.batchUpdate("delete from item");
         List<Item> items = new ArrayList<>();
         String sql = """
                         insert into item values(?,?,?,?);
@@ -74,4 +80,20 @@ public class CstController {
         }
         return "hello world";
     }
+
+    @GetMapping("/test")
+    public String test() throws InterruptedException {
+        cstService.prepareCopy();
+        cstService.prepareTest();
+        return "hello world";
+    }
+
+    @GetMapping("/redis")
+    public String redis(){
+        Set<String> difference = redisTemplate.opsForSet().difference("set2", "set1");
+        difference.forEach(System.out::println);
+        return difference.toString();
+
+    }
+
 }
