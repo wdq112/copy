@@ -5,15 +5,18 @@ import cn.hutool.core.thread.ExecutorBuilder;
 import cn.hutool.core.util.IdUtil;
 import com.example.demo.entity.CstVO;
 import com.example.demo.entity.Item;
+import com.example.demo.entity.ItemDetail;
 import com.example.demo.mapper.CstDAO;
 import com.example.demo.repo.ItemRepo;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import java.util.Map;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -24,6 +27,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -46,6 +51,9 @@ public class CstService {
     @Resource
     private CstDAO cstDAO;
 
+    @Resource
+    private CstService cstService;
+
     public void saveAll(List<Item> items) {
         itemRepo.saveAll(items);
     }
@@ -56,8 +64,8 @@ public class CstService {
         long count = jdbcClient.sql("select count(*) from item").query(Long.class).single();
         Long minId = jdbcClient.sql("select id from item order by id limit 1").query(Long.class).single();
         long maxId = jdbcClient.sql("select id from item order by id desc limit 1").query(Long.class).single();
-        for (int i = 0; i < count / 10000 + 1; i++) {
-            List<Long> itemList = jdbcClient.sql("select id from item where id>=? order by id limit 10000").param(minId).query(Long.class).list();
+        for (int i = 0; i < count / 5000 + 1; i++) {
+            List<Long> itemList = jdbcClient.sql("select id from item where id>=? order by id limit 5000").param(minId).query(Long.class).list();
             if (CollectionUtil.isEmpty(itemList)) {
                 break;
             }
@@ -71,8 +79,8 @@ public class CstService {
 
     public void prepareTest(){
         long count = jdbcClient.sql("select count(*) from item").query(Long.class).single();
-        for (int i = 0; i < count / 100000 + 1; i++) {
-            List<String> tmpList = jdbcClient.sql("select id from item  order by id limit 100000 offset ?").param(i*100000).query(String.class).list();
+        for (int i = 0; i < count / 1000 + 1; i++) {
+            List<String> tmpList = jdbcClient.sql("select id from item  order by id limit 1000 offset ?").param(i*100000).query(String.class).list();
             if (tmpList.isEmpty()) {
                 break;
             }
@@ -81,6 +89,7 @@ public class CstService {
 
     }
 
+    @Transactional
     public void copy() throws InterruptedException {
         var startTime = System.currentTimeMillis();
         prepareCopy();
@@ -98,8 +107,15 @@ public class CstService {
                     countDownLatch.countDown();
                     return;
                 }
-                List<CstVO> list = itemList.stream().map(it -> new CstVO(IdUtil.getSnowflake().nextId(), it)).toList();
+                List<CstVO> list = itemList.stream().map(it -> new CstVO(IdUtil.getSnowflakeNextId(), it,1L)).toList();
+                Map<Long,CstVO> map = list.stream().collect(Collectors.toMap(CstVO::getItemId, Function.identity()));
                 cstDAO.copy(list,Long.parseLong(b[0]),Long.parseLong(b[1]));
+                List<ItemDetail> itemDetails = jdbcClient.sql("select id,item_id from item_detail where item_id >= :startId and item_id<=:endId order by id ").param("startId", b[0], Types.BIGINT)
+                        .param("endId", b[1], Types.BIGINT)
+                        .query(ItemDetail.class)
+                        .list();
+                List<CstVO> list1 = itemDetails.stream().map(it->new CstVO(it.getId(),map.get(it.getItemId()).getId(),IdUtil.getSnowflakeNextId())).toList();
+                cstDAO.copy1(list1,Long.parseLong(b[0]),Long.parseLong(b[1]));
                 countDownLatch.countDown();
             },executor);
 

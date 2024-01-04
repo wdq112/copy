@@ -11,4 +11,14 @@
         insert into item select tmp.id,b.data_version,b.pac_id,b.org_code from tmp,
         (select t.id,t.data_version,t.pac_id,t.org_code from item t where t.id &gt;= #{min_id,jdbcType=BIGINT} and t.id &lt;= #{max_id,jdbcType=BIGINT}) b where b.id = tmp.item_id
     </insert>
+
+    <insert id="copy1">
+        with tmp(id,item_id,new_id) as (select * from (values
+        <foreach item="item" collection="vo" separator=",">
+            (#{item.id},#{item.itemId},#{item.newId})
+        </foreach>
+        ) a)
+        insert into item_detail select tmp.new_id,tmp.item_id,b.sys_desc,b.item_cost from tmp,
+        (select t.id,t.item_id,t.sys_desc,t.item_cost from item_detail t where t.item_id &gt;= #{min_id,jdbcType=BIGINT} and t.item_id &lt;= #{max_id,jdbcType=BIGINT}) b where b.id = tmp.id
+    </insert>
 </mapper>

@@ -8,4 +8,5 @@ import lombok.Data;
 public class CstVO {
     private Long id;
     private Long itemId;
+    private Long newId;
 }
